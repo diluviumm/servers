@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -203,3 +204,117 @@ def test_trivy_image_json_severity_counts(monkeypatch):
     out = server.trivy_image("alpine:3.19")
     assert out["severity_counts"] == {"HIGH": 1, "CRITICAL": 1}
     assert out["sample"]
+
+
+def test_trivy_fs_rejects_bad_format(tmp_path):
+    with pytest.raises(ValueError):
+        server.trivy_fs(str(tmp_path), format="xml")
+
+
+def test_trivy_fs_run_error_surfaces(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "_bin", lambda n: n)
+    monkeypatch.setattr(server, "_ensure_trivy_db", lambda: {"age_h": 2.0})
+    monkeypatch.setattr(
+        server, "_run",
+        lambda cmd, timeout: {"code": -1, "out": "", "err": "trivy crashed"})
+    out = server.trivy_fs(str(tmp_path))
+    assert out["error"] == "trivy crashed" and out["db"]["age_h"] == 2.0
+
+
+def test_trivy_fs_unparseable_json(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "_bin", lambda n: n)
+    monkeypatch.setattr(server, "_ensure_trivy_db", lambda: {"age_h": 2.0})
+    monkeypatch.setattr(
+        server, "_run",
+        lambda cmd, timeout: {"code": 0, "out": "<html>proxy injected",
+                              "err": ""})
+    assert "error" in server.trivy_fs(str(tmp_path))
+
+
+def test_trivy_fs_junit_failures(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "_bin", lambda n: n)
+    monkeypatch.setattr(server, "_ensure_trivy_db", lambda: {"age_h": 2.0})
+    target = tmp_path / "t.xml"
+
+    def fake_run(cmd, timeout):
+        Path(cmd[cmd.index("--output") + 1]).write_text(
+            '<testsuite tests="3" failures="1">', encoding="utf-8")
+        return {"code": 1, "out": "", "err": ""}
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    out = server.trivy_fs(str(tmp_path), format="junit", output_file=str(target))
+    assert out["failures"] == 1 and out["saved_to"] == str(target)
+
+
+def test_trivy_image_sarif_counts(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "_bin", lambda n: n)
+    monkeypatch.setattr(server, "_ensure_trivy_db", lambda: {"age_h": 2.0})
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+
+    def fake_run(cmd, timeout):
+        Path(cmd[cmd.index("--output") + 1]).write_text(
+            json.dumps({"runs": [{"results": [{"rule": {"id": "CVE-1"}}]}]}),
+            encoding="utf-8")
+        return {"code": 0, "out": "", "err": ""}
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    out = server.trivy_image("img:1", format="sarif")
+    assert out["saved_to"].startswith(str(tmp_path)) and out["findings"] == 1
+
+
+def test_trivy_db_age_and_fresh_ensure(tmp_path, monkeypatch):
+    """DB segar (<48h) -> _ensure_trivy_db KANAN tanpa refresh (spy: _run dilarang)."""
+    meta = tmp_path / "metadata.json"
+    meta.write_text(json.dumps(
+        {"UpdatedAt": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())}),
+        encoding="utf-8")
+    monkeypatch.setattr(server, "TRIVY_DB_META", meta)
+    age = server._trivy_db_age_h()
+    assert age is not None and 0 <= age < 1
+
+    def no_run(*args, **kwargs):
+        raise AssertionError("refresh tak boleh jalan utk DB segar")
+
+    monkeypatch.setattr(server, "_run", no_run)
+    out = server._ensure_trivy_db()
+    assert out["refreshed"] is False and out["stale"] is False
+
+
+def test_trivy_db_age_bad_meta_is_none(tmp_path, monkeypatch):
+    meta = tmp_path / "metadata.json"
+    meta.write_text("bukan json", encoding="utf-8")
+    monkeypatch.setattr(server, "TRIVY_DB_META", meta)
+    assert server._trivy_db_age_h() is None
+
+
+def test_nuclei_rejects_missing_templates_dir():
+    with pytest.raises(ValueError):
+        server.nuclei_scan("http://127.0.0.1:1", templates="/definitely/missing")
+
+
+def test_nuclei_parses_jsonl_findings(monkeypatch):
+    monkeypatch.setattr(server, "_bin", lambda n: n)
+    line = json.dumps({"template-id": "custom-csp",
+                       "info": {"severity": "low", "name": "CSP missing"},
+                       "matched-at": "http://127.0.0.1/"})
+    monkeypatch.setattr(
+        server, "_run",
+        lambda cmd, timeout: {"code": 0, "out": line + "\nnoise-not-json\n",
+                              "err": ""})
+    out = server.nuclei_scan("http://127.0.0.1:1")
+    assert out["count"] == 1
+    assert out["findings"][0]["id"] == "custom-csp"
+
+
+def test_trivy_fs_json_report_md(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "_bin", lambda n: n)
+    monkeypatch.setattr(server, "_ensure_trivy_db", lambda: {"age_h": 1.0})
+    monkeypatch.setattr(
+        server, "_run",
+        lambda cmd, timeout: {"code": 0, "out": json.dumps(
+            {"Results": [{"Vulnerabilities": [
+                {"VulnerabilityID": "CVE-1", "PkgName": "a", "Severity": "HIGH"}]}]}),
+            "err": ""})
+    md = tmp_path / "r.md"
+    out = server.trivy_fs(str(tmp_path), report_md=str(md))
+    assert out["report_md"] == str(md) and md.exists()

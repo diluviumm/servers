@@ -50,7 +50,7 @@ jobs:
 
       - name: Pytest (with coverage gate)
         working-directory: src/${{ matrix.package }}
-        run: uv run pytest -q --cov=. --cov-report=term-missing:skip-covered
+        run: uv run pytest -q --cov=. --cov-report=term-missing:skip-covered --cov-report=xml:coverage.xml
 
       - name: Ruff
         working-directory: src/${{ matrix.package }}
@@ -63,3 +63,12 @@ jobs:
       - name: Build
         working-directory: src/${{ matrix.package }}
         run: uv build
+
+      - name: Upload coverage artifact (riwayat per run)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.package }}-py${{ matrix.python }}
+          path: src/${{ matrix.package }}/coverage.xml
+          if-no-files-found: ignore
+          retention-days: 90

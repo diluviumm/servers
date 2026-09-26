@@ -1,0 +1,30 @@
+id: insecure-cookie-flags
+info:
+  name: Cookie Missing HttpOnly/Secure/SameSite Flags (own assets)
+  author: diluviumm
+  severity: info
+  description: >
+    Flags cookies set by self-hosted assets that lack HttpOnly, Secure,
+    or SameSite attributes. Informational hardening reminders for
+    infrastructure you own — this fork's allow-list already restricts
+    scans to loopback and your own domain.
+  tags: config,cookies,selfhosted
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    matchers-condition: or
+    matchers:
+      - type: dsl
+        name: cookie-missing-httponly
+        dsl:
+          - "regex('(?i)set-cookie:', response_headers) && !regex('(?i)set-cookie:[^\\r\\n]*httponly', response_headers)"
+      - type: dsl
+        name: cookie-missing-secure
+        dsl:
+          - "regex('(?i)set-cookie:', response_headers) && !regex('(?i)set-cookie:[^\\r\\n]*secure', response_headers)"
+      - type: dsl
+        name: cookie-missing-samesite
+        dsl:
+          - "regex('(?i)set-cookie:', response_headers) && !regex('(?i)set-cookie:[^\\r\\n]*samesite', response_headers)"

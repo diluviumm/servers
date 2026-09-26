@@ -1,0 +1,22 @@
+id: server-version-disclosure
+info:
+  name: Server/Technology Version Disclosure (own assets)
+  author: diluviumm
+  severity: info
+  description: >
+    Flags Server / X-Powered-By response headers that disclose product
+    or version information on self-hosted assets. Informational
+    hardening reminder, not a vulnerability.
+  tags: config,headers,disclosure,selfhosted
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    matchers-condition: or
+    matchers:
+      - type: regex
+        name: server-version-disclosure
+        part: header
+        regex:
+          - "(?i)^(server|x-powered-By|x-aspnet-version):\\s*[^\\s;]+\\d"
