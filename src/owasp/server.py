@@ -126,9 +126,10 @@ def _ensure_trivy_db() -> dict:
     age = _trivy_db_age_h()
     if age is not None and age < TRIVY_DB_MAX_AGE_H:
         return {"age_h": age, "refreshed": False, "stale": False}
-    result = _run([_bin("trivy"), "--download-db-only", "--quiet"], timeout=300)
+    # --download-db-only is a subcommand-level flag (trivy fs/image), not global.
+    result = _run([_bin("trivy"), "fs", "--download-db-only", "--quiet"], timeout=300)
     if result["code"] != 0:
-        result = _run([_bin("trivy"), "db", "download"], timeout=300)
+        result = _run([_bin("trivy"), "image", "--download-db-only", "--quiet"], timeout=300)
     new_age = _trivy_db_age_h()
     return {
         "age_h_before": age,
@@ -237,22 +238,29 @@ def bearer_scan(path: str, timeout_s: int = 300, output_file: str | None = None,
     except json.JSONDecodeError:
         return {**out, "error": (result["err"][:300] or "unparseable bearer output")}
 
-    files = data.get("files") or []
+    # bearer JSON shape: {severity: [finding, ...]} with filename/line_number keys.
+    by_sev: dict[str, int] = {}
     findings = []
-    for f in files:
-        for item in f.get("findings") or []:
-            findings.append({"file": f.get("location", {}).get("path") or f.get("path"),
-                             "detector": item.get("detector_id") or item.get("detector"),
-                             "line": item.get("line_number") or item.get("line")})
-    summary = data.get("leak_summary") or {}
-    out.update({"findings": len(findings), "severity": summary or None,
-                "sample": findings[:10],
-                "report_keys": sorted(data.keys())[:12] if not findings and data else None})
+    for sev, items in data.items():
+        if not isinstance(items, list):
+            continue
+        by_sev[sev] = len(items)
+        for item in items:
+            findings.append({
+                "severity": sev,
+                "id": item.get("id"),
+                "title": item.get("title"),
+                "file": item.get("filename"),
+                "line": item.get("line_number"),
+                "cwe": item.get("cwe_ids"),
+            })
+    out.update({"total": len(findings), "by_severity": by_sev,
+                "sample": findings[:10]})
     if report_md:
         out["report_md"] = _write_md(
             report_md, "Bearer secret scan",
             [("Result", f"{len(findings)} finding(s) · exit={result['code']}"),
-             ("Findings", _md_table(findings[:20], ["file", "detector", "line"]))],
+             ("Findings", _md_table(findings[:20], ["severity", "id", "file", "line"]))],
         )
     return out
 
