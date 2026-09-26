@@ -1,0 +1,60 @@
+name: Fork Custom Servers CI
+
+# CI untuk server custom fork ini (src/status, src/owasp) — terpisah dari
+# workflow upstream agar merge upstream tidak pernah menyentuh file ini.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/status/**"
+      - "src/owasp/**"
+      - ".github/workflows/fork-ci.yml"
+  pull_request:
+    paths:
+      - "src/status/**"
+      - "src/owasp/**"
+      - ".github/workflows/fork-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: fork-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [status, owasp]
+    name: ${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: "src/${{ matrix.package }}/.python-version"
+
+      - name: Sync (frozen lockfile)
+        working-directory: src/${{ matrix.package }}
+        run: uv sync --frozen --all-extras --dev
+
+      - name: Pytest
+        working-directory: src/${{ matrix.package }}
+        run: uv run pytest -q
+
+      - name: Ruff
+        working-directory: src/${{ matrix.package }}
+        run: uv run ruff check .
+
+      - name: Pyright
+        working-directory: src/${{ matrix.package }}
+        run: uv run --frozen pyright
+
+      - name: Build
+        working-directory: src/${{ matrix.package }}
+        run: uv build
