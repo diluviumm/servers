@@ -89,3 +89,36 @@ def test_action_failure_surfaces_stderr(monkeypatch):
     monkeypatch.setattr(server, "_run", fail_run)
     out = server.focus_workspace("99")
     assert out["ok"] is False and "no such workspace" in out["error"]
+
+
+def test_overview_invalid_json_is_reported(monkeypatch):
+    monkeypatch.setattr(server.shutil, "which", lambda n: f"/usr/bin/{n}")
+
+    def bad_run(cmd, timeout=10):
+        if "--json" in cmd and cmd[cmd.index("--json") + 1] == "outputs":
+            return {"code": 0, "out": "<html>proxy error", "err": ""}
+        payload = {"workspaces": WORKSPACES, "windows": WINDOWS,
+                   "focused-window": FOCUSED}[cmd[cmd.index("--json") + 1]]
+        return {"code": 0, "out": json.dumps(payload), "err": ""}
+
+    monkeypatch.setattr(server, "_run", bad_run)
+    out = server.overview()
+    assert out["ok"] is False and "JSON" in out["error"]
+
+
+def test_overview_modes_null_safe(monkeypatch):
+    monkeypatch.setattr(server.shutil, "which", lambda n: f"/usr/bin/{n}")
+    outputs = [{"name": "eDP-1", "modes": None}]
+
+    def run(cmd, timeout=10):
+        if "--json" in cmd:
+            topic = cmd[cmd.index("--json") + 1]
+            payload = {"outputs": outputs, "workspaces": [], "windows": [],
+                       "focused-window": None}[topic]
+            return {"code": 0, "out": json.dumps(payload), "err": ""}
+        return {"code": 0, "out": "", "err": ""}
+
+    monkeypatch.setattr(server, "_run", run)
+    ov = server.overview()
+    assert ov["ok"] is True
+    assert ov["outputs"][0]["preferred_mode"] is None

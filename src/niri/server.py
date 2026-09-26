@@ -82,7 +82,11 @@ def overview() -> dict:
     if outputs_res["code"] != 0:
         return {"ok": False, "error": "niri msg gagal (sesi Wayland?)",
                 "detail": outputs_res["err"] or outputs_res["out"]}
-    outputs_raw = json.loads(outputs_res["out"] or "[]")
+    try:
+        outputs_raw = json.loads(outputs_res["out"] or "[]")
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "outputs bukan JSON valid",
+                "detail": (outputs_res["out"] or "")[:200]}
     if isinstance(outputs_raw, dict):   # {"HDMI-A-1": {...}} — dict keyed by name
         outputs_raw = list(outputs_raw.values())
     workspaces_raw = _json_msgs(["workspaces"]) or []
@@ -93,7 +97,7 @@ def overview() -> dict:
     for o in (outputs_raw if isinstance(outputs_raw, list) else []):
         preferred = next(
             (f"{m.get('width')}x{m.get('height')}"
-             for m in o.get("modes", []) if m.get("is_preferred")), None)
+             for m in (o.get("modes") or []) if m.get("is_preferred")), None)
         outputs.append({
             "name": o.get("name"),
             "make": o.get("make"),
@@ -129,8 +133,9 @@ def overview() -> dict:
     if isinstance(focused_raw, dict):
         focused = {"id": focused_raw.get("id"), "title": (focused_raw.get("title") or "")[:120],
                    "app_id": focused_raw.get("app_id")}
-    return {"outputs": outputs, "workspaces": workspaces, "windows": windows,
-            "focused": focused, "counts": {"outputs": len(outputs),
+    return {"ok": True, "outputs": outputs, "workspaces": workspaces,
+            "windows": windows, "focused": focused,
+            "counts": {"outputs": len(outputs),
                                            "workspaces": len(workspaces), "windows": len(windows)}}
 
 

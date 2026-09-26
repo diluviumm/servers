@@ -149,10 +149,14 @@ def _count_sarif(text: str) -> int | None:
 
 
 def _count_junit(text: str) -> int | None:
-    m = re.search(r'tests="(\d+)"[^>]*failures="(\d+)"', text)
-    if m:
-        return int(m.group(2))
-    return len(re.findall(r"<failure", text)) or None
+    """Hitung failures dari laporan junit — tahan urutan atribut (gitleaks
+    mencetak failures= sebelum tests=); bukan laporan junit -> None."""
+    if not text or "<testsuite" not in text:
+        return None
+    vals = re.findall(r'failures="(\d+)"', text)
+    if vals:
+        return sum(int(v) for v in vals)
+    return len(re.findall(r"<failure", text))
 
 
 @mcp.tool()
@@ -222,7 +226,8 @@ def gitleaks_scan(path: str, mode: str = "dir", timeout_s: int = 120,
                 out["findings"] = _count_sarif(fh.read())
         out["saved_to"] = saved
     else:
-        saved = _resolve_output(output_file, ".gitleaks.junit.xml")
+        # read the EXACT path gitleaks wrote (report_path), not a re-derived suffix
+        saved = report_path or _resolve_output(output_file, ".gitleaks.junit.xml")
         if os.path.exists(saved):
             with open(saved, encoding="utf-8", errors="replace") as fh:
                 out["failures"] = _count_junit(fh.read())

@@ -119,3 +119,31 @@ def test_bearer_with_output_file_reads_from_file(tmp_path, monkeypatch):
     assert out["total"] == 1
     assert out["by_severity"] == {"critical": 1}
     assert out["sample"][0]["file"] == "f.py"
+
+
+def test_gitleaks_junit_reads_written_report(tmp_path, monkeypatch):
+    """Regression: branch junit must read the EXACT path gitleaks wrote.
+
+    Suffix mismatch (.gitleaks.junit vs .gitleaks.junit.xml) hid the report
+    -> failures was never counted (always None).
+    """
+    monkeypatch.setattr(server, "_bin", lambda name: name)
+
+    def fake_run(cmd, timeout):
+        report = Path(cmd[cmd.index("--report-path") + 1])
+        report.write_text('<testsuite tests="4" failures="3"></testsuite>',
+                          encoding="utf-8")
+        return {"code": 1, "out": "", "err": ""}
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    out = server.gitleaks_scan(str(tmp_path), format="junit",
+                               report_md=str(tmp_path / "r.md"))
+    assert out["failures"] == 3
+
+
+def test_count_junit_attribute_order_and_clean_zero():
+    """gitleaks prints failures= BEFORE tests= — order-independent parse; clean scan == 0, non-junit == None."""
+    xml = '<testsuite failures="0" name="gitleaks" tests="0" time=""></testsuite>'
+    assert server._count_junit(xml) == 0
+    assert server._count_junit('<testsuite tests="5" failures="2">') == 2
+    assert server._count_junit("plain text, not a report") is None

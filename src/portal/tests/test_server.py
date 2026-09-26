@@ -85,3 +85,23 @@ def test_clipboard_empty_and_failure(monkeypatch):
     )
     empty = server.clipboard_read()
     assert empty["ok"] is True and empty["empty"] is True
+
+
+def test_screenshot_move_failure_reported(tmp_path, monkeypatch):
+    shot_dir = tmp_path / "shots"
+    shot_dir.mkdir()
+    monkeypatch.setattr(server, "_shot_dir", lambda: str(shot_dir))
+    monkeypatch.setattr(server.shutil, "which", lambda n: f"/usr/bin/{n}")
+
+    def fake_run(cmd, timeout=15, stdin=None):
+        (shot_dir / "s.png").write_bytes(b"\x89PNG")
+        return {"code": 0, "out": "", "err": ""}
+
+    monkeypatch.setattr(server, "_run", fake_run)
+
+    def boom(src, dst):
+        raise OSError("cross-device denied")
+
+    monkeypatch.setattr(server.shutil, "move", boom)
+    out = server.screenshot(save_to=str(tmp_path / "out.png"))
+    assert out["ok"] is False and "gagal memindahkan" in out["error"]

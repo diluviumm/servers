@@ -115,8 +115,16 @@ def screenshot(save_to: str = "") -> dict:
         if parent:
             os.makedirs(parent, exist_ok=True)
         if os.path.abspath(target) != os.path.abspath(found):
-            shutil.move(found, target)
-    return {"ok": True, "path": target, "size_bytes": os.path.getsize(target),
+            try:
+                shutil.move(found, target)
+            except OSError as exc:
+                return {"ok": False, "error": f"gagal memindahkan file: {exc}",
+                        "source": found}
+    try:
+        size = os.path.getsize(target)
+    except OSError as exc:
+        return {"ok": False, "error": f"file hasil screenshot tak terbaca: {exc}"}
+    return {"ok": True, "path": target, "size_bytes": size,
             "clipboard_side_effect": "screenshot mengisi clipboard sistem"}
 
 
