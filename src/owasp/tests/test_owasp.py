@@ -20,6 +20,7 @@ def test_nuclei_rejects_foreign_host():
 
 
 def test_nuclei_accepts_allow_listed_host(monkeypatch):
+    monkeypatch.setattr(server, "_bin", lambda name: name)
     monkeypatch.setattr(server, "_run", lambda cmd, timeout: {"code": 0, "out": "", "err": ""})
     out = server.nuclei_scan("http://127.0.0.1:9080")
     assert out["count"] == 0
@@ -27,6 +28,7 @@ def test_nuclei_accepts_allow_listed_host(monkeypatch):
 
 
 def test_nuclei_templates_flag_included(monkeypatch):
+    monkeypatch.setattr(server, "_bin", lambda name: name)
     captured = {}
 
     def fake_run(cmd, timeout):
@@ -81,6 +83,7 @@ def test_gitleaks_json_with_output_file_reads_from_file(tmp_path, monkeypatch):
     """Regression: report written to output_file must be counted from the FILE,
     not from the (empty) stdout."""
     target = tmp_path / "report.json"
+    monkeypatch.setattr(server, "_bin", lambda name: name)
 
     def fake_run(cmd, timeout):
         Path(cmd[cmd.index("--report-path") + 1]).write_text(
@@ -101,6 +104,7 @@ def test_gitleaks_json_with_output_file_reads_from_file(tmp_path, monkeypatch):
 def test_bearer_with_output_file_reads_from_file(tmp_path, monkeypatch):
     """Regression: bearer --output writes JSON to file; stdout is empty."""
     target = tmp_path / "bearer.json"
+    monkeypatch.setattr(server, "_bin", lambda name: name)
 
     def fake_run(cmd, timeout):
         Path(cmd[cmd.index("--output") + 1]).write_text(
