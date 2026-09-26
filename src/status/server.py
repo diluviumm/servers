@@ -17,6 +17,7 @@ import time
 import urllib.request
 from collections import Counter
 
+import yaml
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("hermes-status")
@@ -27,6 +28,30 @@ KNOWN_PORTS = [9080, 8888, 20128, 7456]
 ERRORS_LOG = "/home/mael/.hermes/logs/errors.log"
 GATEWAY_HEARTBEAT = "/home/mael/.hermes/state/gateway.heartbeat"
 TRIVY_DB_META = os.path.expanduser("~/.cache/trivy/db/metadata.json")
+CONFIG_PATH = "/home/mael/.hermes/config.yaml"
+
+# Keys whose values must never leave the server un-redacted.
+_SECRET_KEY_HINTS = ("token", "key", "secret", "password", "pass",
+                     "credential", "auth", "cookie", "bearer")
+_SECRET_VALUE_RE = re.compile(r"\b(?:sk-|ghp_|gho_|xox[baprs]-|eyJ[A-Za-z0-9_-]{8,})\S{8,}")
+_LONG_TOKEN_RE = re.compile(r"\b[A-Za-z0-9_\-]{40,}\b")
+
+
+def _redact(obj):
+    """Recursively mask credentials: secret-looking keys AND token-shaped values."""
+    if isinstance(obj, dict):
+        return {
+            k: ("[REDACTED]"
+                if any(h in str(k).lower() for h in _SECRET_KEY_HINTS)
+                else _redact(v))
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_redact(v) for v in obj]
+    if isinstance(obj, str):
+        out = _SECRET_VALUE_RE.sub("[REDACTED]", obj)
+        return _LONG_TOKEN_RE.sub("[REDACTED]", out)
+    return obj
 
 
 def _user_env() -> dict:
@@ -230,6 +255,138 @@ def recent_errors(n: int = 60) -> dict:
         "top_patterns": top,
         "tail": [ln.rstrip() for ln in window[-15:]],
     }
+
+
+@mcp.tool()
+def services(pattern: str = "hermes-*") -> dict:
+    """Detail unit systemd --user (default prefix hermes-*): state/load/sub per unit,
+    daftar unit failed, proses tunnel, dan probe portal — untuk diagnosis terarah."""
+    units = []
+    raw = _run(
+        ["systemctl", "--user", "list-units", "--all", "--no-legend",
+         "--no-pager", "--type=service", pattern],
+        user=True,
+    )
+    for ln in raw.splitlines():
+        parts = ln.split(None, 4)
+        if len(parts) >= 4 and parts[0].endswith(".service"):
+            units.append({
+                "unit": parts[0],
+                "load": parts[1],
+                "active": parts[2],
+                "sub": parts[3],
+                "description": parts[4] if len(parts) > 4 else "",
+            })
+
+    failed_raw = _run(
+        ["systemctl", "--user", "list-units", "--type=service", "--state=failed",
+         "--no-legend", "--no-pager"],
+        user=True,
+    )
+    failed = [
+        ln.split()[0]
+        for ln in failed_raw.splitlines()
+        if ln.strip() and ln.split()[0].endswith(".service")
+    ]
+
+    def _timer_driven_active(unit_name: str) -> bool:
+        """A service inactive between runs is by design when an ACTIVE timer drives it."""
+        trig = _run(["systemctl", "--user", "show", unit_name,
+                     "-p", "TriggeredBy", "--value"], user=True)
+        for t in trig.split(","):
+            t = t.strip()
+            if t.endswith(".timer") and _run(
+                    ["systemctl", "--user", "is-active", t], user=True).strip() == "active":
+                return True
+        return False
+
+    by_design = sorted(
+        u["unit"] for u in units
+        if u["active"] != "active" and _timer_driven_active(u["unit"])
+    )
+    # Units not active and not timer-driven are the real problems.
+    unhealthy = sorted(
+        u["unit"] for u in units
+        if u["active"] != "active" and u["unit"] not in by_design
+    )
+    tunnel = _run(["pgrep", "-f", "cloudflared"])
+    return {
+        "pattern": pattern,
+        "units": units,
+        "failed": failed,
+        "inactive_timer_driven": by_design,
+        "unhealthy": unhealthy,
+        "tunnel_pids": [p for p in tunnel.split() if p.isdigit()],
+        "portal": _http_ok("http://127.0.0.1:9080/api/notice"),
+        "ok": bool(units) and not failed and not unhealthy,
+    }
+
+
+@mcp.tool()
+def ports(port: int | None = None) -> dict:
+    """Daftar TCP listener (ss -ltnpH) — tanpa argumen: semua; dengan port: cek
+    apakah port itu listening + proses pemegangnya."""
+    entries = []
+    for ln in _run(["ss", "-ltnpH"]).splitlines():
+        parts = ln.split()
+        if len(parts) < 4 or ":" not in parts[3]:
+            continue
+        try:
+            pno = int(parts[3].rsplit(":", 1)[1])
+        except ValueError:
+            continue
+        proc = ""
+        if "users:" in ln:
+            proc = ln.split("users:", 1)[1].strip()[:140]
+        entries.append({"port": pno, "state": parts[0], "local": parts[3],
+                        "process": proc})
+    if port is not None:
+        hits = [e for e in entries if e["port"] == port]
+        return {"port": port, "listening": bool(hits), "entries": hits}
+    return {"listening_ports": sorted({e["port"] for e in entries}),
+            "entries": entries}
+
+
+@mcp.tool()
+def gateway_logs(n: int = 100, level: str = "", contains: str = "") -> dict:
+    """Tail journal unit hermes-gateway — filter severity (level: emerg..debug) dan/
+    atau keyword substring; semua token panjang di-redact sebelum keluar server."""
+    cmd = ["journalctl", "--user", "-u", "hermes-gateway",
+           "-n", str(max(1, min(n, 500))), "--no-pager", "-o", "short-iso", "-q"]
+    if level:
+        cmd += ["-p", level]
+    raw = _run(cmd, user=True, timeout=20)
+    if raw.startswith("error:"):
+        return {"error": raw}
+    lines = raw.splitlines()
+    if contains:
+        needle = contains.lower()
+        lines = [ln for ln in lines if needle in ln.lower()]
+    lines = [_LONG_TOKEN_RE.sub("[REDACTED]", ln) for ln in lines]
+    return {"requested": n, "level": level or None, "contains": contains or None,
+            "returned": len(lines),
+            "lines": [ln.rstrip() for ln in lines[-min(len(lines), 200):]]}
+
+
+@mcp.tool()
+def config_view(section: str = "") -> dict:
+    """Baca ~/.hermes/config.yaml — satu section ('model', 'mcp_servers', ...) atau
+    seluruh struktur — dengan SEMUA credential/secret di-redact di sisi server."""
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        return {"error": f"config unreadable: {exc}"}
+    if not isinstance(data, dict):
+        return {"error": "config root is not a mapping"}
+    if section:
+        if section not in data:
+            return {"error": f"section '{section}' not found",
+                    "sections": sorted(str(k) for k in data)}
+        return {"path": CONFIG_PATH, "section": section,
+                "config": _redact({section: data[section]})}
+    return {"path": CONFIG_PATH, "sections": sorted(str(k) for k in data),
+            "config": _redact(data)}
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ name = "hermes-mcp-status"
 version = "0.1.0"
 description = "MCP server: health checks for a self-hosted Hermes Agent stack"
 requires-python = ">=3.10"
-dependencies = ["mcp<2"]
+dependencies = ["mcp<2", "pyyaml"]
 
 [build-system]
 requires = ["hatchling"]

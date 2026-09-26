@@ -1,6 +1,7 @@
 """Tests for the hermes-status MCP server (no live infra required)."""
 
 import importlib.util
+import json
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
@@ -77,3 +78,71 @@ def test_recent_errors_groups_patterns(tmp_path, monkeypatch):
 def test_recent_errors_missing_log(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "ERRORS_LOG", str(tmp_path / "nope.log"))
     assert server.recent_errors()["error"] == "errors.log not found"
+
+
+def test_registered_tool_count():
+    """Regression: all six advertised tools must be registered (4 were lost in a rewrite)."""
+    names = sorted(t.name for t in server.mcp._tool_manager.list_tools())
+    assert names == ["config_view", "gateway_logs", "health", "ports",
+                     "recent_errors", "services"]
+
+
+def test_redact_masks_secrets():
+    data = {"api_key": "abc123",
+            "nested": {"oauth_token": "zzz", "model": "mimo-v2.6-flash"},
+            "mcp_servers": {"cmd": "npx -y pkg"},
+            "long": "A" * 48}
+    out = server._redact(data)
+    assert out["api_key"] == "[REDACTED]"
+    assert out["nested"]["oauth_token"] == "[REDACTED]"
+    assert out["nested"]["model"] == "mimo-v2.6-flash"
+    assert out["mcp_servers"]["cmd"] == "npx -y pkg"
+    assert out["long"] == "[REDACTED]"
+
+
+def test_config_view_redacts_and_lists_sections(tmp_path, monkeypatch):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("model: mimo-v2.6-flash\n"
+                   "providers:\n  ocg:\n    api_key: dummyvalue1234567890abcdef\n",
+                   encoding="utf-8")
+    monkeypatch.setattr(server, "CONFIG_PATH", str(cfg))
+    full = server.config_view()
+    assert full["sections"] == ["model", "providers"]
+    text = json.dumps(full["config"])
+    assert "dummyvalue" not in text and "mimo-v2.6-flash" in text
+    sec = server.config_view(section="model")
+    assert sec["config"] == {"model": "mimo-v2.6-flash"}
+    miss = server.config_view(section="nope")
+    assert "not found" in miss["error"] and "model" in miss["sections"]
+
+
+def test_ports_and_services_shapes(monkeypatch):
+    def fake_run(cmd, timeout=15, user=False):
+        if cmd[0] == "ss":
+            return ('LISTEN 0 4096 127.0.0.1:9080 0.0.0.0:* users:'
+                    '(("portal",pid=1,fd=3))')
+        if "list-units" in cmd and "--state=failed" not in cmd:
+            return "hermes-gateway.service loaded active running Hermes Gateway"
+        if cmd[:2] == ["systemctl", "--user"] and "TriggeredBy" in cmd:
+            return ""  # no timer -> not by design
+        return ""
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    monkeypatch.setattr(server, "_http_ok", lambda url, timeout=4: {"ok": True, "status": 200})
+    p = server.ports()
+    assert 9080 in p["listening_ports"]
+    hit = server.ports(port=9080)
+    assert hit["listening"] and '"portal"' in hit["entries"][0]["process"]
+    s = server.services()
+    assert s["units"][0]["unit"] == "hermes-gateway.service" and s["ok"]
+
+
+def test_gateway_logs_redacts_tokens(monkeypatch):
+    monkeypatch.setattr(
+        server, "_run",
+        lambda cmd, timeout=15, user=False: (
+            "line with token " + "A" * 50 if cmd and cmd[0] == "journalctl" else ""),
+    )
+    out = server.gateway_logs(n=50)
+    assert out["requested"] == 50
+    assert all("A" * 40 not in ln for ln in out["lines"])
