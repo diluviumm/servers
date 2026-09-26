@@ -31,7 +31,8 @@ jobs:
       fail-fast: false
       matrix:
         package: [status, owasp, niri, portal]
-    name: ${{ matrix.package }}
+        python: ["3.10", "3.12"]
+    name: ${{ matrix.package }} . py${{ matrix.python }}
     steps:
       - uses: actions/checkout@v6
 
@@ -41,15 +42,15 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version-file: "src/${{ matrix.package }}/.python-version"
+          python-version: "${{ matrix.python }}"
 
       - name: Sync (frozen lockfile)
         working-directory: src/${{ matrix.package }}
         run: uv sync --frozen --all-extras --dev
 
-      - name: Pytest
+      - name: Pytest (with coverage gate)
         working-directory: src/${{ matrix.package }}
-        run: uv run pytest -q
+        run: uv run pytest -q --cov=. --cov-report=term-missing:skip-covered
 
       - name: Ruff
         working-directory: src/${{ matrix.package }}

@@ -105,3 +105,23 @@ def test_screenshot_move_failure_reported(tmp_path, monkeypatch):
     monkeypatch.setattr(server.shutil, "move", boom)
     out = server.screenshot(save_to=str(tmp_path / "out.png"))
     assert out["ok"] is False and "gagal memindahkan" in out["error"]
+
+def test_session_env_discovers_sockets(tmp_path, monkeypatch):
+    """mcp SDK memangkas env child — auto-discover Wayland & Niri socket."""
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.delenv("NIRI_SOCKET", raising=False)
+    (tmp_path / "wayland-1").touch()
+    (tmp_path / "niri.wayland-1.99.sock").touch()
+    env = server._session_env()
+    assert env["WAYLAND_DISPLAY"] == "wayland-1"
+    assert env["NIRI_SOCKET"] == str(tmp_path / "niri.wayland-1.99.sock")
+
+
+def test_session_env_keeps_valid_existing(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    (tmp_path / "wayland-7").touch()
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-7")
+    env = server._session_env()
+    assert env["WAYLAND_DISPLAY"] == "wayland-7"
+

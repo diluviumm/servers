@@ -39,6 +39,7 @@ STATE_DIR = Path(os.path.expanduser("~/.hermes/mcp-servers/state"))
 TRIVY_DB_META = Path(os.path.expanduser("~/.cache/trivy/db/metadata.json"))
 CUSTOM_TEMPLATES = Path(__file__).resolve().parent / "templates"
 GITLEAKS_BASELINE = STATE_DIR / "gitleaks-baseline.json"
+BEARER_IGNORE = STATE_DIR / "bearer" / "bearer.ignore"
 TRIVY_DB_MAX_AGE_H = 48
 
 
@@ -249,6 +250,8 @@ def bearer_scan(path: str, timeout_s: int = 300, output_file: str | None = None,
     """Scan source code for hard-coded secrets/PII (bearer). JSON summary; report can be saved."""
     cmd = [_bin("bearer"), "scan", path, "--format", "json", "--hide-progress-bar",
            "--no-color"]
+    if BEARER_IGNORE.is_file():
+        cmd += ["--ignore-file", str(BEARER_IGNORE)]
     report_path = None
     if output_file:
         report_path = _resolve_output(output_file, ".bearer.json")

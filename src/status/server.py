@@ -16,6 +16,7 @@ import subprocess
 import time
 import urllib.request
 from collections import Counter
+from pathlib import Path
 
 import yaml
 from mcp.server.fastmcp import FastMCP
@@ -233,12 +234,33 @@ def health() -> dict:
     }
 
 
+def _tail_lines(path: str | Path, keep: int) -> tuple[list[str], int]:
+    """Baca ~keep baris terakhir tanpa memuat seluruh file (seek dari akhir).
+    Mengembalikan (baris, total_bytes_file)."""
+    with open(path, "rb") as fh:
+        fh.seek(0, 2)
+        total = fh.tell()
+        block = 64 * 1024
+        data = b""
+        pos = total
+        while pos > 0 and data.count(b"\n") <= keep:
+            step = min(block, pos)
+            pos -= step
+            fh.seek(pos)
+            data = fh.read(step) + data
+            if len(data) > 8 * 1024 * 1024:
+                break
+    lines = data.decode("utf-8", errors="replace").splitlines(keepends=True)
+    if pos > 0 and lines:
+        lines = lines[1:]  # baris pertama mungkin terpotong di tengah
+    return lines, total
+
+
 @mcp.tool()
 def recent_errors(n: int = 60) -> dict:
     """Tail errors.log lalu kelompokkan menjadi pola error unik + frekuensi (debugging zero-touch)."""
     try:
-        with open(ERRORS_LOG, encoding="utf-8", errors="replace") as fh:
-            lines = fh.readlines()
+        lines, total_bytes = _tail_lines(ERRORS_LOG, 5000)
     except FileNotFoundError:
         return {"error": "errors.log not found", "patterns": [], "tail": []}
 
@@ -250,7 +272,8 @@ def recent_errors(n: int = 60) -> dict:
     ]
     return {
         "window_lines": len(window),
-        "file_lines": len(lines),
+        "file_bytes": total_bytes,
+        "buffered_lines": len(lines),
         "unique_patterns": len(counter),
         "top_patterns": top,
         "tail": [ln.rstrip() for ln in window[-15:]],

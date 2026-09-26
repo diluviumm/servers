@@ -1,5 +1,8 @@
 # Model Context Protocol servers
 
+[![Fork Custom Servers CI](https://github.com/diluviumm/servers/actions/workflows/fork-ci.yml/badge.svg)](https://github.com/diluviumm/servers/actions/workflows/fork-ci.yml)
+[![CodeQL (fork)](https://github.com/diluviumm/servers/actions/workflows/codeql.yml/badge.svg)](https://github.com/diluviumm/servers/actions/workflows/codeql.yml)
+
 This repository is a collection of *reference implementations* for the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), as well as references to community-built servers and additional resources.
 
 > [!NOTE]

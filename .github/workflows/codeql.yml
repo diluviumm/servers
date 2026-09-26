@@ -1,0 +1,42 @@
+name: CodeQL (fork)
+
+# Analisis keamanan static (CodeQL) khusus server custom fork ini.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/status/**"
+      - "src/owasp/**"
+      - "src/niri/**"
+      - "src/portal/**"
+      - ".github/workflows/codeql.yml"
+  pull_request:
+    paths:
+      - "src/status/**"
+      - "src/owasp/**"
+      - "src/niri/**"
+      - "src/portal/**"
+      - ".github/workflows/codeql.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL Python
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"

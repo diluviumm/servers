@@ -147,3 +147,25 @@ def test_count_junit_attribute_order_and_clean_zero():
     assert server._count_junit(xml) == 0
     assert server._count_junit('<testsuite tests="5" failures="2">') == 2
     assert server._count_junit("plain text, not a report") is None
+
+
+def test_bearer_ignore_file_wiring(tmp_path, monkeypatch):
+    """Baseline FP: bearer.ignore (state) dipass sebagai --ignore-file bila ada."""
+    monkeypatch.setattr(server, "_bin", lambda n: n)
+    ignore = tmp_path / "bearer.ignore"
+    ignore.write_text("test rule id\n", encoding="utf-8")
+    monkeypatch.setattr(server, "BEARER_IGNORE", ignore)
+    seen: dict = {}
+
+    def fake_run(cmd, timeout):
+        seen["cmd"] = cmd
+        return {"code": 0, "out": json.dumps({"critical": []}), "err": ""}
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    server.bearer_scan(str(tmp_path))
+    assert "--ignore-file" in seen["cmd"] and str(ignore) in seen["cmd"]
+
+    # tanpa file baseline -> flag tidak ditambahkan
+    monkeypatch.setattr(server, "BEARER_IGNORE", tmp_path / "missing.ignore")
+    server.bearer_scan(str(tmp_path))
+    assert "--ignore-file" not in seen["cmd"]

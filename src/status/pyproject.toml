@@ -13,9 +13,10 @@ build-backend = "hatchling.build"
 packages = ["."]
 
 [dependency-groups]
-dev = ["pyright>=1.1.407", "ruff>=0.7.3", "pytest>=8.0.0"]
+dev = ["pytest-cov>=5.0", "pyright>=1.1.407", "ruff>=0.7.3", "pytest>=8.0.0"]
 
 [tool.pytest.ini_options]
+addopts = "--cov-fail-under=80"
 testpaths = ["tests"]
 
 [tool.ruff]
