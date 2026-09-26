@@ -407,16 +407,18 @@ def nuclei_scan(target: str, severity: str = "high,critical", timeout_s: int = 3
             "nuclei only scans this machine's own assets"
         )
 
+    # validasi input SEBELUM resolve binary — fail-fast utk argumen salah,
+    # independen dari apakah nuclei terpasang di mesin ini.
+    if templates and not Path(os.path.expanduser(templates)).is_dir():
+        raise ValueError(f"templates path '{templates}' is not a directory")
+
     cmd = [_bin("nuclei"), "-u", target, "-severity", severity,
            "-jsonl", "-silent", "-timeout", "10"]
     tpl_dirs = []
     if CUSTOM_TEMPLATES.is_dir() and any(CUSTOM_TEMPLATES.glob("*.yaml")):
         tpl_dirs.append(str(CUSTOM_TEMPLATES))
     if templates:
-        extra = Path(os.path.expanduser(templates))
-        if not extra.is_dir():
-            raise ValueError(f"templates path '{templates}' is not a directory")
-        tpl_dirs.append(str(extra))
+        tpl_dirs.append(str(Path(os.path.expanduser(templates))))
     if tpl_dirs:
         cmd += ["-t", ",".join(tpl_dirs)]
 
