@@ -75,3 +75,43 @@ def test_write_md_and_table(tmp_path):
     text = Path(out).read_text(encoding="utf-8")
     assert "# Title" in text and "| a | b |" in text
     assert server._md_table([], ["a"]) == "_no findings_"
+
+
+def test_gitleaks_json_with_output_file_reads_from_file(tmp_path, monkeypatch):
+    """Regression: report written to output_file must be counted from the FILE,
+    not from the (empty) stdout."""
+    target = tmp_path / "report.json"
+
+    def fake_run(cmd, timeout):
+        Path(cmd[cmd.index("--report-path") + 1]).write_text(
+            json.dumps([{"RuleID": "a", "Secret": "s"},
+                        {"RuleID": "b", "Secret": "s2"},
+                        {"RuleID": "c", "Secret": "s3"}]),
+            encoding="utf-8",
+        )
+        return {"code": 1, "out": "", "err": ""}
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    out = server.gitleaks_scan("/tmp", format="json", output_file=str(target))
+    assert out["count"] == 3
+    assert out["clean"] is False
+    assert out["report_file"] == str(target)
+
+
+def test_bearer_with_output_file_reads_from_file(tmp_path, monkeypatch):
+    """Regression: bearer --output writes JSON to file; stdout is empty."""
+    target = tmp_path / "bearer.json"
+
+    def fake_run(cmd, timeout):
+        Path(cmd[cmd.index("--output") + 1]).write_text(
+            json.dumps({"critical": [{"id": "x", "filename": "f.py",
+                                      "line_number": 3}]}),
+            encoding="utf-8",
+        )
+        return {"code": 1, "out": "", "err": ""}
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    out = server.bearer_scan("/tmp", output_file=str(target))
+    assert out["total"] == 1
+    assert out["by_severity"] == {"critical": 1}
+    assert out["sample"][0]["file"] == "f.py"

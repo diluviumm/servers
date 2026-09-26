@@ -174,8 +174,10 @@ def gitleaks_scan(path: str, mode: str = "dir", timeout_s: int = 120,
         cmd += ["--report-path", "/dev/stdout"]
     if use_baseline and GITLEAKS_BASELINE.exists():
         cmd += ["--baseline-path", str(GITLEAKS_BASELINE)]
+    report_path = None
     if output_file or format != "json":
-        cmd += ["--report-path", _resolve_output(output_file, f".gitleaks.{format}")]
+        report_path = _resolve_output(output_file, f".gitleaks.{format}")
+        cmd += ["--report-path", report_path]
 
     result = _run(cmd, timeout=min(timeout_s, 300))
     if result["code"] == -1:
@@ -185,10 +187,18 @@ def gitleaks_scan(path: str, mode: str = "dir", timeout_s: int = 120,
                  "baseline_used": use_baseline and GITLEAKS_BASELINE.exists()}
 
     if format == "json":
+        # With output_file the report goes to the FILE, not stdout — read it there.
+        raw = result["out"]
+        if report_path:
+            try:
+                raw = Path(report_path).read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                return {**out, "error": f"report file unreadable: {exc}"}
         try:
-            findings = json.loads(result["out"] or "[]")
+            findings = json.loads(raw or "[]")
         except json.JSONDecodeError:
             return {**out, "error": (result["err"][:300] or "no report")}
+        out["report_file"] = report_path if output_file else None
         out.update(_brief(findings))
         out["clean"] = result["code"] in (0,) and not findings
         if save_baseline:
@@ -217,6 +227,14 @@ def gitleaks_scan(path: str, mode: str = "dir", timeout_s: int = 120,
             with open(saved, encoding="utf-8", errors="replace") as fh:
                 out["failures"] = _count_junit(fh.read())
         out["saved_to"] = saved
+
+    if report_md and format != "json":
+        n = out.get("findings", out.get("failures"))
+        out["report_md"] = _write_md(
+            report_md, f"Gitleaks scan ({format})",
+            [("Result", f"exit={result['code']} · findings/failures={n}"),
+             ("Report file", out.get("saved_to", ""))],
+        )
     return out
 
 
@@ -226,17 +244,27 @@ def bearer_scan(path: str, timeout_s: int = 300, output_file: str | None = None,
     """Scan source code for hard-coded secrets/PII (bearer). JSON summary; report can be saved."""
     cmd = [_bin("bearer"), "scan", path, "--format", "json", "--hide-progress-bar",
            "--no-color"]
+    report_path = None
     if output_file:
-        cmd += ["--output", _resolve_output(output_file, ".bearer.json")]
+        report_path = _resolve_output(output_file, ".bearer.json")
+        cmd += ["--output", report_path]
     result = _run(cmd, timeout=min(timeout_s, 600))
     if result["code"] == -1:
         return {"error": result["err"]}
 
     out: dict = {"exit": result["code"]}
+    # With --output the JSON goes to the FILE, not stdout — read it there.
+    raw = result["out"]
+    if report_path and os.path.exists(report_path):
+        try:
+            raw = Path(report_path).read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return {**out, "error": f"report file unreadable: {exc}"}
     try:
-        data = json.loads(result["out"] or "{}")
+        data = json.loads(raw or "{}")
     except json.JSONDecodeError:
         return {**out, "error": (result["err"][:300] or "unparseable bearer output")}
+    out["report_file"] = report_path
 
     # bearer JSON shape: {severity: [finding, ...]} with filename/line_number keys.
     by_sev: dict[str, int] = {}
