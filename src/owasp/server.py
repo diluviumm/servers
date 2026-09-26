@@ -392,10 +392,10 @@ def nuclei_scan(target: str, severity: str = "high,critical", timeout_s: int = 3
         try:
             j = json.loads(ln)
             findings.append({
-                "id": j.get("templateID"),
+                "id": j.get("template-id") or j.get("templateID"),
                 "severity": (j.get("info") or {}).get("severity"),
                 "name": (j.get("info") or {}).get("name"),
-                "url": j.get("matched-at"),
+                "url": j.get("matched-at") or j.get("matched_at"),
             })
         except json.JSONDecodeError:
             continue
