@@ -74,6 +74,16 @@ def test_focus_and_close_window_use_id(monkeypatch):
     assert ["niri", "msg", "action", "close-window", "--id", "41"] in calls
 
 
+def test_move_window_to_workspace_builds_command(monkeypatch):
+    calls = []
+    monkeypatch.setattr(server.shutil, "which", lambda n: f"/usr/bin/{n}")
+    monkeypatch.setattr(server, "_run", _fake_run_factory(calls))
+    assert server.move_window_to_workspace("web")["ok"] is True
+    assert ["niri", "msg", "action", "move-window-to-workspace",
+            "web"] in calls
+    assert server.move_window_to_workspace("  ")["ok"] is False
+
+
 def test_missing_binary_is_reported(monkeypatch):
     monkeypatch.setattr(server.shutil, "which", lambda n: None)
     assert "error" in server.overview()

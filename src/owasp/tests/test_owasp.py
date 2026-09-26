@@ -169,3 +169,37 @@ def test_bearer_ignore_file_wiring(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "BEARER_IGNORE", tmp_path / "missing.ignore")
     server.bearer_scan(str(tmp_path))
     assert "--ignore-file" not in seen["cmd"]
+
+
+def test_trivy_fs_sarif_counts_findings(tmp_path, monkeypatch):
+    """Jalur format != json: report ditulis ke file lalu findings dihitung."""
+    monkeypatch.setattr(server, "_bin", lambda n: n)
+    monkeypatch.setattr(server, "_ensure_trivy_db", lambda: {"age_h": 1.0})
+    target = tmp_path / "t.sarif"
+
+    def fake_run(cmd, timeout):
+        Path(cmd[cmd.index("--output") + 1]).write_text(
+            json.dumps({"runs": [{"results": [{"rule": {"id": "A"}},
+                                              {"rule": {"id": "B"}}]}]}),
+            encoding="utf-8")
+        return {"code": 0, "out": "", "err": ""}
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    out = server.trivy_fs(str(tmp_path), format="sarif", output_file=str(target))
+    assert out["saved_to"] == str(target) and out["findings"] == 2
+
+
+def test_trivy_image_json_severity_counts(monkeypatch):
+    monkeypatch.setattr(server, "_bin", lambda n: n)
+    monkeypatch.setattr(server, "_ensure_trivy_db", lambda: {"age_h": 1.0})
+
+    def fake_run(cmd, timeout):
+        return {"code": 0, "out": json.dumps(
+            {"Results": [{"Vulnerabilities": [{"Severity": "HIGH"},
+                                              {"Severity": "CRITICAL"}]}]}),
+            "err": ""}
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    out = server.trivy_image("alpine:3.19")
+    assert out["severity_counts"] == {"HIGH": 1, "CRITICAL": 1}
+    assert out["sample"]

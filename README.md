@@ -17,6 +17,14 @@ This repository is a collection of *reference implementations* for the [Model Co
 >
 > All four are plain FastMCP stdio servers (`mcp<2`) with pytest suites (`uv run pytest` per server directory, covered by `fork-ci.yml`). State/baselines live in `~/.hermes/mcp-servers/state/`.
 
+**Development (fork):**
+
+- `scripts/check.sh` — one shot: pytest + coverage gate, ruff, pyright for all four packages
+- `scripts/mcp_stdio_test.py` — call any server tool over stdio from the CLI (no live agent needed)
+- Coverage gates enforced in `fork-ci.yml` (`--cov-fail-under`: status 80 / owasp 65 / niri 75 / portal 75) on Python **3.10 + 3.12**
+- A local `pre-push` hook runs the same pytest + coverage gates before every push
+- CodeQL scans (`codeql.yml`) run on every change to the custom servers
+
 > [!IMPORTANT]
 > If you are looking for a list of MCP servers, you can browse published servers on [the MCP Registry](https://registry.modelcontextprotocol.io/). The repository served by this README is dedicated to housing just the small number of reference servers maintained by the MCP steering group.
 
