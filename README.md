@@ -2,6 +2,16 @@
 
 This repository is a collection of *reference implementations* for the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP), as well as references to community-built servers and additional resources.
 
+> [!NOTE]
+> **Custom servers in this fork** — beyond upstream, this fork adds two production-wired servers used by a self-hosted Hermes Agent stack:
+>
+> | Server | Tools | Purpose |
+> |---|---|---|
+> | `src/status` | `health`, `recent_errors` | Infra health: gateway, tunnel, portal, systemd, ports, disk, RAM, load, trivy DB age + pattern-grouped error triage |
+> | `src/owasp` | `gitleaks_scan`, `bearer_scan`, `trivy_fs`, `trivy_image`, `nuclei_scan` | Security scanning with code-enforced rails (nuclei allow-list = loopback + own domain only), auto trivy DB refresh, baseline/sarif/junit/markdown outputs, custom nuclei templates in `src/owasp/templates/` |
+>
+> Both are plain FastMCP stdio servers (`mcp<2`) with pytest suites (`uv run pytest` per server directory). State/baselines live in `~/.hermes/mcp-servers/state/`.
+
 > [!IMPORTANT]
 > If you are looking for a list of MCP servers, you can browse published servers on [the MCP Registry](https://registry.modelcontextprotocol.io/). The repository served by this README is dedicated to housing just the small number of reference servers maintained by the MCP steering group.
 

@@ -1,0 +1,33 @@
+id: missing-security-headers
+info:
+  name: Missing Security Headers (own assets)
+  author: diluviumm
+  severity: info
+  description: >
+    Flags baseline security headers that are absent on self-hosted assets
+    (HSTS, X-Content-Type-Options, X-Frame-Options, CSP). Findings are
+    informational hardening reminders, not vulnerabilities.
+  tags: config,headers,selfhosted
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    matchers-condition: or
+    matchers:
+      - type: dsl
+        name: missing-hsts
+        dsl:
+          - "!regex('(?i)strict-transport-security:', all_headers)"
+      - type: dsl
+        name: missing-x-content-type-options
+        dsl:
+          - "!regex('(?i)x-content-type-options:', all_headers)"
+      - type: dsl
+        name: missing-x-frame-options
+        dsl:
+          - "!regex('(?i)x-frame-options:', all_headers)"
+      - type: dsl
+        name: missing-content-security-policy
+        dsl:
+          - "!regex('(?i)content-security-policy:', all_headers)"
