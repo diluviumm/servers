@@ -179,6 +179,26 @@ def test_services_unknown_inactive_unit_still_unhealthy(monkeypatch, tmp_path):
     assert not s["ok"]
 
 
+def test_services_dropin_onfailure_is_not_unhealthy(monkeypatch, tmp_path):
+    """A drop-in (`*.service.d/x.conf`) declaring OnFailure= counts too."""
+    (tmp_path / "some-unit.service.d").mkdir()
+    (tmp_path / "some-unit.service.d" / "override.conf").write_text(
+        "[Unit]\nOnFailure=hermes-orphan.service\n")
+
+    def fake_run(cmd, timeout=15, user=False):
+        if cmd[0] == "systemctl" and "list-units" in cmd and "--state=failed" not in cmd:
+            return "hermes-orphan.service loaded inactive dead orphan"
+        return ""
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    monkeypatch.setattr(
+        server.os.path, "expanduser", lambda p: str(tmp_path) if "systemd" in p else p)
+    monkeypatch.setattr(server, "_http_ok", lambda url, timeout=4: {"ok": True, "status": 200})
+    s = server.services()
+    assert s["unhealthy"] == []
+    assert s["ok"]
+
+
 def test_gateway_logs_redacts_tokens(monkeypatch):
     monkeypatch.setattr(
         server, "_run",
