@@ -137,6 +137,48 @@ def test_ports_and_services_shapes(monkeypatch):
     assert s["units"][0]["unit"] == "hermes-gateway.service" and s["ok"]
 
 
+def test_services_event_driven_unit_is_not_unhealthy(monkeypatch, tmp_path):
+    """An OnFailure= watchdog resting at 'inactive' must not be flagged unhealthy.
+
+    Regression: portal-alert (pure OnFailure target, no timer) was reported
+    unhealthy for days because only timers counted as 'by design'.
+    """
+    (tmp_path / "hermes-portal-selftest.service").write_text(
+        "[Unit]\nOnFailure=hermes-portal-alert.service\n")
+
+    def fake_run(cmd, timeout=15, user=False):
+        if cmd[0] == "systemctl" and "list-units" in cmd and "--state=failed" not in cmd:
+            return ("hermes-portal-alert.service loaded inactive dead portal alert")
+        return ""
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    monkeypatch.setattr(
+        server.os.path, "expanduser", lambda p: str(tmp_path) if "systemd" in p else p)
+    monkeypatch.setattr(server, "_http_ok", lambda url, timeout=4: {"ok": True, "status": 200})
+    s = server.services()
+    assert s["unhealthy"] == []
+    assert s["inactive_timer_driven"] == ["hermes-portal-alert.service"]
+    assert s["ok"]
+
+
+def test_services_unknown_inactive_unit_still_unhealthy(monkeypatch, tmp_path):
+    """A unit inactive with no timer and no OnFailure/OnSuccess parent IS a problem."""
+    (tmp_path / "unrelated.service").write_text("[Unit]\nDescription=nothing\n")
+
+    def fake_run(cmd, timeout=15, user=False):
+        if cmd[0] == "systemctl" and "list-units" in cmd and "--state=failed" not in cmd:
+            return "hermes-orphan.service loaded inactive dead orphan"
+        return ""
+
+    monkeypatch.setattr(server, "_run", fake_run)
+    monkeypatch.setattr(
+        server.os.path, "expanduser", lambda p: str(tmp_path) if "systemd" in p else p)
+    monkeypatch.setattr(server, "_http_ok", lambda url, timeout=4: {"ok": True, "status": 200})
+    s = server.services()
+    assert s["unhealthy"] == ["hermes-orphan.service"]
+    assert not s["ok"]
+
+
 def test_gateway_logs_redacts_tokens(monkeypatch):
     monkeypatch.setattr(
         server, "_run",

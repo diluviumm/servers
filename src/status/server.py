@@ -323,11 +323,41 @@ def services(pattern: str = "hermes-*") -> dict:
                 return True
         return False
 
+    def _event_driven_units() -> set:
+        """Units referenced as OnFailure=/OnSuccess= targets by ANY user unit.
+
+        Those only run on a failure/success event, so `active=inactive` is their
+        resting state — flagging them as unhealthy is a false positive (the
+        portal-alert watchdog spent days 'unhealthy' for exactly this reason).
+        One directory scan replaces one `systemctl show` call per unit.
+        """
+        targets: set[str] = set()
+        unit_dirs = [
+            Path(os.path.expanduser("~/.config/systemd/user")),
+            Path("/usr/lib/systemd/user"),
+            Path("/etc/systemd/user"),
+        ]
+        for d in unit_dirs:
+            if not d.is_dir():
+                continue
+            for f in d.glob("*.service"):
+                try:
+                    text = f.read_text(encoding="utf-8", errors="ignore")
+                except OSError:
+                    continue
+                for ln in text.splitlines():
+                    if ln.startswith(("OnFailure=", "OnSuccess=")):
+                        for t in ln.split("=", 1)[1].split():
+                            targets.add(t.strip())
+        return targets
+
+    event_driven = _event_driven_units()
     by_design = sorted(
         u["unit"] for u in units
-        if u["active"] != "active" and _timer_driven_active(u["unit"])
+        if u["active"] != "active"
+        and (u["unit"] in event_driven or _timer_driven_active(u["unit"]))
     )
-    # Units not active and not timer-driven are the real problems.
+    # Units not active, not timer-driven and not event-driven are the real problems.
     unhealthy = sorted(
         u["unit"] for u in units
         if u["active"] != "active" and u["unit"] not in by_design
