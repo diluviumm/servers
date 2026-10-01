@@ -74,8 +74,7 @@ def _action(args: list[str]) -> dict:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def overview() -> dict:
-    """Peta desktop Niri: outputs, workspaces (aktif/fokus), jendela terbuka
-    (id, app, judul, workspace) — dasar sebelum memanggil action lain."""
+    """Peta desktop Niri: outputs (mode preferens, fokus), semua workspace (id/idx/nama/aktif/fokus), jendela terbuka (id, app_id, judul terpotong 120 char, workspace) plus jendela yang sedang fokus. INI LANGKAH PERTAMA sebelum action lain - kumpulkan id jendela dan index/nama workspace di sini. Read-only, hanya 'niri msg --json' IPC. Sesi Wayland hilang -> field 'error' terstruktur, tidak crash."""
     if not _ensure_bin():
         return {"error": "niri not installed"}
 
@@ -142,7 +141,7 @@ def overview() -> dict:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def focus_workspace(reference: str) -> dict:
-    """Fokus ke workspace berdasarkan index atau nama (lihat overview dulu)."""
+    """Pindahkan fokus ke workspace lain berdasar index ATAU nama (baca nilai dulu dari overview). Idempotent: mengulang ke target yang sama aman, tidak menutup atau membuka apa pun. Pakai saat user menyuruh 'buka kerja di workspace X'. Return {'ok':..} hasil action niri; nama/index salah -> error dari compositor terbaca sebagai pesan."""
     ref = str(reference).strip()
     if not ref:
         return {"ok": False, "error": "reference kosong"}
@@ -151,14 +150,13 @@ def focus_workspace(reference: str) -> dict:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def focus_window(window_id: int) -> dict:
-    """Fokus ke jendela spesifik berdasarkan id (lihat overview dulu)."""
+    """Pindahkan fokus ke jendela spesifik berdasar 'window_id' dari overview. Idempotent dan non-destructive: hanya mengubah fokus, tidak memindahkan atau menutup jendela. Pakai sebagai langkah sebelum move_window_to_workspace yang mensyaratkan jendela sedang fokus. Return {'ok':..}; id tidak ada -> error dari niri terbaca sebagai pesan."""
     return _action(["focus-window", "--id", str(int(window_id))])
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def move_window_to_workspace(reference: str) -> dict:
-    """Pindahkan jendela yang sedang FOKUS ke workspace lain (index/nama).
-    Pindahkan fokus dulu (focus_window) bila tujuannya bukan jendela fokus."""
+    """Pindahkan jendela yang SEDANG FOKUS ke workspace target (index/nama). Pastikan focus_window dulu bila tujuan bukan jendela fokus saat ini; idempotent dan non-destructive - jendela tidak ditutup, hanya berpindah. Pakai saat menata layout kerja antar workspace. Return {'ok':..} hasil action niri; reference kosong -> error terstruktur sebelum action dijalankan."""
     ref = str(reference).strip()
     if not ref:
         return {"ok": False, "error": "reference kosong"}
@@ -167,7 +165,7 @@ def move_window_to_workspace(reference: str) -> dict:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False))
 def close_window(window_id: int) -> dict:
-    """Tutup jendela spesifik berdasarkan id (close-window --id, tanpa perlu fokus)."""
+    """Tutup jendela spesifik berdasar 'window_id' tanpa perlu fokus (close-window --id). SATU-SATUNYA aksi destruktif di server ini: pekerjaan tak tersimpan di jendela bisa hilang - konfirmasi ke user sebelum memanggil. Pakai hanya saat user minta menutup aplikasi tertentu. Return {'ok':..}; id sudah terlanjur tertutup -> error dari compositor."""
     return _action(["close-window", "--id", str(int(window_id))])
 
 

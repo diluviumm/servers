@@ -166,9 +166,7 @@ def gitleaks_scan(path: str, mode: str = "dir", timeout_s: int = 120,
                   format: str = "json", output_file: str | None = None,
                   use_baseline: bool = False, save_baseline: bool = False,
                   report_md: str | None = None) -> dict:
-    """Scan for leaked secrets (gitleaks). mode: 'dir' (working tree) or 'git' (full history).
-    format: json|sarif|junit. use_baseline skips known findings (state/gitleaks-baseline.json);
-    save_baseline stores the current report as baseline. report_md writes a markdown summary."""
+    """Scan repo or directory for leaked secrets with gitleaks. mode='git' checks history, 'dir' covers the working tree; format json|sarif|junit; use_baseline/save_baseline manage known-safe findings under state/gitleaks-baseline.json; report_md summarizes. Use before push or in a repo audit to find stray API keys. Read-only; returns count + samples, full report lands in the report file."""
     if mode not in ("dir", "git"):
         raise ValueError("mode must be 'dir' or 'git'")
     if format not in ("json", "sarif", "junit"):
@@ -248,7 +246,7 @@ def gitleaks_scan(path: str, mode: str = "dir", timeout_s: int = 120,
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def bearer_scan(path: str, timeout_s: int = 300, output_file: str | None = None,
                 report_md: str | None = None) -> dict:
-    """Scan source code for hard-coded secrets/PII (bearer). JSON summary; report can be saved."""
+    """Scan the source tree for hardcoded secrets and PII with Bearer; the JSON is condensed to severity counts + samples (never inlined raw). format json|sarif|junit, output_file persists the report, report_md summarizes it. Use when auditing whether keys/passwords/PII leaked into code. Read-only; exit code and finding counts are read from the report file so numbers stay consistent."""
     cmd = [_bin("bearer"), "scan", path, "--format", "json", "--hide-progress-bar",
            "--no-color"]
     if BEARER_IGNORE.is_file():
@@ -305,8 +303,7 @@ def bearer_scan(path: str, timeout_s: int = 300, output_file: str | None = None,
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def trivy_fs(path: str, timeout_s: int = 300, format: str = "json",
              output_file: str | None = None, report_md: str | None = None) -> dict:
-    """Scan a filesystem/path for vulnerabilities, secrets and misconfig (trivy).
-    Auto-refreshes the vuln DB when older than 48h. format: json|sarif|junit."""
+    """Scan a filesystem path with Trivy (vulns + secrets + misconfig); the vulnerability DB auto-refreshes when older than 48h so new CVEs are caught. format json|sarif|junit with report_md summary. Use before deploying to answer 'any known CVEs in my dependencies?'. Read-only for the target: returns severity counts + top findings, the full report is saved to the output file. Requires the trivy binary."""
     if format not in ("json", "sarif", "junit"):
         raise ValueError("format must be json|sarif|junit")
 
@@ -356,7 +353,7 @@ def trivy_fs(path: str, timeout_s: int = 300, format: str = "json",
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def trivy_image(image: str, timeout_s: int = 300, format: str = "json") -> dict:
-    """Scan a container image for CVEs and secrets (trivy image). format: json|sarif."""
+    """Scan a container image for CVEs (vuln + secret) with Trivy; sarif is written to a file, json counts findings per severity. 'image' is a tag or digest ref, execution capped by timeout_s (timeout surfaces as field 'error'). Use before pushing or deploying an image: 'is this base image safe?'. Reaches the network (image registry + DB, openWorld); returns a summary, never raw output."""
     if format not in ("json", "sarif"):
         raise ValueError("format must be json or sarif")
     db = _ensure_trivy_db()
@@ -398,9 +395,7 @@ def trivy_image(image: str, timeout_s: int = 300, format: str = "json") -> dict:
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def nuclei_scan(target: str, severity: str = "high,critical", timeout_s: int = 300,
                 templates: str | None = None, report_md: str | None = None) -> dict:
-    """Scan an ALLOW-LISTED target (loopback + own domain only) with nuclei.
-    Custom templates folder (src/owasp/templates) is always included when present;
-    pass `templates` to add another local template directory."""
+    """Run Nuclei template scans against an allowed host. Allow-list enforced in CODE: only loopback (127.0.0.1/localhost) and own domain ishmly.space - other hosts raise ValueError. Includes the custom templates/ dir, optional severity filter, jsonl parsed to severity counts + matched targets. Use to verify security headers on your own site. Returns a compact summary, not raw scan output."""
     from urllib.parse import urlparse
 
     host = urlparse(target if "://" in target else f"http://{target}").hostname or ""

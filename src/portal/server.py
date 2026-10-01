@@ -81,10 +81,7 @@ def _snap_dir(d: str) -> dict:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
 def screenshot(save_to: str = "") -> dict:
-    """Ambil screenshot layar fokus ke file PNG. Niri menulis ke folder
-    screenshot-path lalu file dipindahkan ke `save_to` bila diminta
-    (default: file tetap di folder screenshot niri). Screenshot juga
-    masuk clipboard sistem sebagai efek samping native Niri."""
+    """Ambil screenshot layar fokus ke PNG via niri (screenshot-screen --write-to-disk): file baru terdeteksi dengan polling di folder screenshot-path dari config niri; 'save_to' memindahkan hasil ke path target, default file tetap di folder screenshot. Pakai saat user minta 'lihat layar saya'. Efek samping native: screenshot juga mengisi clipboard sistem. Return path + size_bytes."""
     if not shutil.which("niri"):
         return {"ok": False, "error": "niri not installed"}
 
@@ -131,7 +128,7 @@ def screenshot(save_to: str = "") -> dict:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def clipboard_read() -> dict:
-    """Baca isi teks clipboard sistem (wl-paste). Kosong bila clipboard tak berisi teks."""
+    """Baca isi teks clipboard sistem via wl-paste --type text. Return {'text':..} bila ada teks; {'empty':true} bila kosong atau berisi non-teks (gambar) - itu bukan error. Pakai saat user menyuruh 'baca yang saya salin'. Read-only dan aman; kegagalan koneksi Wayland muncul sebagai field 'error', bukan empty palsu. Tidak pernah memodifikasi apa pun."""
     if not shutil.which("wl-paste"):
         return {"ok": False, "error": "wl-paste not installed"}
     res = _run(["wl-paste", "--no-newline", "--type", "text"], timeout=8)
@@ -146,7 +143,7 @@ def clipboard_read() -> dict:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False))
 def clipboard_write(text: str) -> dict:
-    """Tulis teks ke clipboard sistem (wl-copy) — menimpa isi clipboard."""
+    """Tulis teks ke clipboard sistem via wl-copy - MENIMPA isi clipboard user (destructive; idempotent untuk teks yang sama). Pakai HANYA saat user meminta 'salin ini ke clipboard', jangan pernah memanggil proaktif. Return {'chars': panjang teks}. Gagal koneksi Wayland -> field 'error'. Catatan: clipboard bisa berisi data sensitif user - jangan meneruskannya ke mana pun tanpa izin."""
     if not shutil.which("wl-copy"):
         return {"ok": False, "error": "wl-copy not installed"}
     res = _run(["wl-copy"], timeout=8, stdin=text)

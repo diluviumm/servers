@@ -169,7 +169,7 @@ def normalize_error_line(line: str) -> str:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def health() -> dict:
-    """Kesehatan infra lengkap: gateway, tunnel, portal, unit gagal, port, disk, RAM, load, trivy DB."""
+    """Snapshot kesehatan infra Hermes dalam satu panggilan: gateway (aktif/pid/uptime/heartbeat), tunnel cloudflared, portal & Hindsight HTTP, unit systemd failed, port listening, disk (warn >=90%), RAM, load, umur trivy DB. Pakai sebagai LANGKAH PERTAMA troubleshooting atau cek rutin sebelum tugas panjang. Return dict dengan 'ok' sebagai ringkasan; read-only, aman dipanggil kapan saja."""
     gateway_active = _run(["systemctl", "--user", "is-active", "hermes-gateway"], user=True)
     gateway_pids = _run(["pgrep", "-fc", "hermes.*gateway"]) or "0"
     tunnel_pids = _run(["pgrep", "-f", "cloudflared"])
@@ -259,7 +259,7 @@ def _tail_lines(path: str | Path, keep: int) -> tuple[list[str], int]:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def recent_errors(n: int = 60) -> dict:
-    """Tail errors.log lalu kelompokkan menjadi pola error unik + frekuensi (debugging zero-touch)."""
+    """Baca tail errors.log (buffer maks 5000 baris), normalisasi bagian volatil (timestamp/UUID/hex/angka), kelompokkan menjadi pola unik + frekuensi beserta cuplikan mentah terakhir. Pakai saat error berulang dan ingin tahu akar polanya tanpa scroll log manual. 'n' = lebar jendela baris (1-500). Read-only; log tak terbaca dikembalikan sebagai field 'error', tool tidak pernah crash."""
     try:
         lines, total_bytes = _tail_lines(ERRORS_LOG, 5000)
     except FileNotFoundError:
@@ -287,8 +287,7 @@ def recent_errors(n: int = 60) -> dict:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def services(pattern: str = "hermes-*") -> dict:
-    """Detail unit systemd --user (default prefix hermes-*): state/load/sub per unit,
-    daftar unit failed, proses tunnel, dan probe portal — untuk diagnosis terarah."""
+    """Daftar unit systemd --user yang cocok glob 'pattern' (default 'hermes-*'), dipisah menjadi: sehat, inactive-karena-timer (by design), benar-benar unhealthy, plus daftar unit failed global. Pakai saat mencurigai service mati setelah reboot/update — membedakan 'mati karena timer' vs 'mati beneran'. Read-only; tidak pernah menjalankan atau menghentikan unit apa pun."""
     units = []
     raw = _run(
         ["systemctl", "--user", "list-units", "--all", "--no-legend",
@@ -378,8 +377,7 @@ def services(pattern: str = "hermes-*") -> dict:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def ports(port: int | None = None) -> dict:
-    """Daftar TCP listener (ss -ltnpH) — tanpa argumen: semua; dengan port: cek
-    apakah port itu listening + proses pemegangnya."""
+    """Daftar port listening dari 'ss -ltnpH' beserta proses pemiliknya; parameter 'port' opsional untuk mengecek satu port persis (mis. 8791). Pakai saat portal/gateway tidak bisa diakses — cepat lihat siapa yang listen dan di port mana. Read-only, hasil terbatas pada socket TCP listening IPv4+IPv6 milik user ini."""
     entries = []
     for ln in _run(["ss", "-ltnpH"]).splitlines():
         parts = ln.split()
@@ -411,9 +409,7 @@ JOURNAL_LEVELS = frozenset({
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def gateway_logs(n: int = 100, level: str = "", contains: str = "") -> dict:
-    """Tail journal unit hermes-gateway — filter severity (level: emerg..debug) dan/
-    atau keyword substring; semua token panjang di-redact sebelum keluar server.
-    level: emerg|alert|crit|err|warning|notice|info|debug (atau angka 0-7)."""
+    """Tail journal unit hermes-gateway dengan filter severity (emerg..debug atau angka 0-7, divalidasi lebih dulu — level salah memunculkan ValueError, bukan log palsu) dan/atau substring 'contains'; semua token panjang di-redact sebelum keluar server. Pakai saat gateway aneh: cari pola error/warning di sekitar waktu kejadian. 'n' 1-500 baris; read-only."""
     level = str(level).lower().strip()
     if level not in JOURNAL_LEVELS:
         raise ValueError(
@@ -439,8 +435,7 @@ def gateway_logs(n: int = 100, level: str = "", contains: str = "") -> dict:
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def config_view(section: str = "") -> dict:
-    """Baca ~/.hermes/config.yaml — satu section ('model', 'mcp_servers', ...) atau
-    seluruh struktur — dengan SEMUA credential/secret di-redact di sisi server."""
+    """Baca ~/.hermes/config.yaml sebagai dict ter-olah — 'section' memilih top-level key (mis. 'mcp_servers', 'model'); kosong untuk seluruh file. Secret otomatis di-redact (token >=40 char + hint key/password/secret/token). Pakai saat perlu cek setting atau deteksi bentrok konfigurasi tanpa membuka file mentah. Read-only; tidak pernah menampilkan kredensial asli."""
     try:
         with open(CONFIG_PATH, encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
