@@ -125,3 +125,14 @@ def test_session_env_keeps_valid_existing(tmp_path, monkeypatch):
     env = server._session_env()
     assert env["WAYLAND_DISPLAY"] == "wayland-7"
 
+
+def test_all_tools_have_annotations():
+    """MCP best practice: clipboard_read=readOnly, clipboard_write=destructive
+    (menimpa clipboard = kehilangan data pengguna)."""
+    import asyncio
+    tools = asyncio.run(server.mcp.list_tools())
+    assert tools and all(t.annotations is not None for t in tools)
+    by_name = {t.name: t for t in tools}
+    assert by_name["clipboard_read"].annotations.readOnlyHint is True
+    assert by_name["clipboard_write"].annotations.destructiveHint is True
+

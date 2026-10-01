@@ -14,6 +14,7 @@ import shutil
 import subprocess
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 mcp = FastMCP("hermes-niri")
 
@@ -71,7 +72,7 @@ def _action(args: list[str]) -> dict:
     return {"ok": True, "action": args[0] if args else None}
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def overview() -> dict:
     """Peta desktop Niri: outputs, workspaces (aktif/fokus), jendela terbuka
     (id, app, judul, workspace) — dasar sebelum memanggil action lain."""
@@ -139,7 +140,7 @@ def overview() -> dict:
                                            "workspaces": len(workspaces), "windows": len(windows)}}
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def focus_workspace(reference: str) -> dict:
     """Fokus ke workspace berdasarkan index atau nama (lihat overview dulu)."""
     ref = str(reference).strip()
@@ -148,13 +149,13 @@ def focus_workspace(reference: str) -> dict:
     return _action(["focus-workspace", ref])
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def focus_window(window_id: int) -> dict:
     """Fokus ke jendela spesifik berdasarkan id (lihat overview dulu)."""
     return _action(["focus-window", "--id", str(int(window_id))])
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def move_window_to_workspace(reference: str) -> dict:
     """Pindahkan jendela yang sedang FOKUS ke workspace lain (index/nama).
     Pindahkan fokus dulu (focus_window) bila tujuannya bukan jendela fokus."""
@@ -164,7 +165,7 @@ def move_window_to_workspace(reference: str) -> dict:
     return _action(["move-window-to-workspace", ref])
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False))
 def close_window(window_id: int) -> dict:
     """Tutup jendela spesifik berdasarkan id (close-window --id, tanpa perlu fokus)."""
     return _action(["close-window", "--id", str(int(window_id))])

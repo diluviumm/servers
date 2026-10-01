@@ -30,6 +30,22 @@ python3 server.py   # MCP over stdio
 ~/.hermes/mcp-servers/venv/bin/python /path/ke/src/niri/server.py
 ```
 
+## Tool annotations (MCP)
+
+| Annotation | Tools |
+|---|---|
+| `readOnlyHint=true` | `overview` |
+| `destructiveHint=false`, `idempotentHint=true` | `focus_workspace`, `focus_window`, `move_window_to_workspace` |
+| `destructiveHint=true` | `close_window` (jendela bisa ada pekerjaan tak tersimpan) |
+
+## Urutan pemakaian yang benar
+
+1. `overview` dulu → dapat `id` jendela & index/nama workspace.
+2. `focus_window` / `focus_workspace` (idempotent — aman diulang).
+3. `move_window_to_workspace` memindahkan jendela yang **sedang fokus**
+   (focus dulu bila tujuannya bukan jendela fokus).
+4. `close_window` terakhir — satu-satunya aksi destruktif.
+
 ## Catatan keamanan
 
 Action yang disediakan **hanya** yang terbalik-arah (focus/move/close by id

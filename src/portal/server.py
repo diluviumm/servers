@@ -16,6 +16,7 @@ import subprocess
 import time
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 mcp = FastMCP("hermes-portal")
 
@@ -78,7 +79,7 @@ def _snap_dir(d: str) -> dict:
     return snap
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
 def screenshot(save_to: str = "") -> dict:
     """Ambil screenshot layar fokus ke file PNG. Niri menulis ke folder
     screenshot-path lalu file dipindahkan ke `save_to` bila diminta
@@ -128,7 +129,7 @@ def screenshot(save_to: str = "") -> dict:
             "clipboard_side_effect": "screenshot mengisi clipboard sistem"}
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def clipboard_read() -> dict:
     """Baca isi teks clipboard sistem (wl-paste). Kosong bila clipboard tak berisi teks."""
     if not shutil.which("wl-paste"):
@@ -143,7 +144,7 @@ def clipboard_read() -> dict:
     return {"ok": True, "empty": not res["out"], "text": res["out"]}
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False))
 def clipboard_write(text: str) -> dict:
     """Tulis teks ke clipboard sistem (wl-copy) — menimpa isi clipboard."""
     if not shutil.which("wl-copy"):

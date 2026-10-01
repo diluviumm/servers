@@ -199,6 +199,44 @@ def test_services_dropin_onfailure_is_not_unhealthy(monkeypatch, tmp_path):
     assert s["ok"]
 
 
+def test_all_tools_have_annotations():
+    """MCP best practice (riset 1 Okt 2026): tool wajib bawa annotations
+    (readOnlyHint/destructiveHint) agar client bisa membedakan baca vs tulis."""
+    import asyncio
+    tools = asyncio.run(server.mcp.list_tools())
+    assert tools and all(t.annotations is not None for t in tools)
+
+
+def test_readonly_tools_marked_readonly():
+    import asyncio
+    by_name = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
+    assert by_name["health"].annotations.readOnlyHint is True
+    assert by_name["config_view"].annotations.readOnlyHint is True
+
+
+def test_gateway_logs_rejects_invalid_level():
+    """BUG #2: journalctl -p bukanlevel prints 'Unknown log level' with exit 0 —
+    the tool used to return that as if it were gateway log lines."""
+    import pytest
+    with pytest.raises(ValueError, match="level"):
+        server.gateway_logs(level="bukanlevel")
+
+
+def test_gateway_logs_accepts_real_levels(monkeypatch):
+    monkeypatch.setattr(server, "_run", lambda cmd, timeout=15, user=False: "line")
+    out = server.gateway_logs(level="warning", n=10)
+    assert out["level"] == "warning" and out["lines"] == ["line"]
+
+
+def test_recent_errors_unreadable_log(monkeypatch):
+    """PermissionError (not just FileNotFoundError) must not crash the tool."""
+    def boom(path, keep):
+        raise PermissionError("Permission denied")
+    monkeypatch.setattr(server, "_tail_lines", boom)
+    result = server.recent_errors()
+    assert "error" in result and result["patterns"] == []
+
+
 def test_gateway_logs_redacts_tokens(monkeypatch):
     monkeypatch.setattr(
         server, "_run",

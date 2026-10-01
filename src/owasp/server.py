@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 mcp = FastMCP("hermes-owasp")
 
@@ -160,7 +161,7 @@ def _count_junit(text: str) -> int | None:
     return len(re.findall(r"<failure", text))
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def gitleaks_scan(path: str, mode: str = "dir", timeout_s: int = 120,
                   format: str = "json", output_file: str | None = None,
                   use_baseline: bool = False, save_baseline: bool = False,
@@ -244,7 +245,7 @@ def gitleaks_scan(path: str, mode: str = "dir", timeout_s: int = 120,
     return out
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def bearer_scan(path: str, timeout_s: int = 300, output_file: str | None = None,
                 report_md: str | None = None) -> dict:
     """Scan source code for hard-coded secrets/PII (bearer). JSON summary; report can be saved."""
@@ -301,7 +302,7 @@ def bearer_scan(path: str, timeout_s: int = 300, output_file: str | None = None,
     return out
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def trivy_fs(path: str, timeout_s: int = 300, format: str = "json",
              output_file: str | None = None, report_md: str | None = None) -> dict:
     """Scan a filesystem/path for vulnerabilities, secrets and misconfig (trivy).
@@ -353,7 +354,7 @@ def trivy_fs(path: str, timeout_s: int = 300, format: str = "json",
     return out
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def trivy_image(image: str, timeout_s: int = 300, format: str = "json") -> dict:
     """Scan a container image for CVEs and secrets (trivy image). format: json|sarif."""
     if format not in ("json", "sarif"):
@@ -367,6 +368,8 @@ def trivy_image(image: str, timeout_s: int = 300, format: str = "json") -> dict:
                       timeout=min(timeout_s, 600))
         out: dict = {"image": image, "format": "sarif", "exit": result["code"],
                      "saved_to": out_path, "db": db}
+        if result["code"] == -1:  # timeout/crash — konsisten dgn cabang json
+            return {**out, "error": result["err"]}
         if result["code"] == 0 and os.path.exists(out_path):
             with open(out_path, encoding="utf-8", errors="replace") as fh:
                 out["findings"] = _count_sarif(fh.read())
@@ -392,7 +395,7 @@ def trivy_image(image: str, timeout_s: int = 300, format: str = "json") -> dict:
             "sample": _brief(vulns)["sample"], "exit": result["code"], "db": db}
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def nuclei_scan(target: str, severity: str = "high,critical", timeout_s: int = 300,
                 templates: str | None = None, report_md: str | None = None) -> dict:
     """Scan an ALLOW-LISTED target (loopback + own domain only) with nuclei.

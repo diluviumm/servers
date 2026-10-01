@@ -20,6 +20,7 @@ from pathlib import Path
 
 import yaml
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 mcp = FastMCP("hermes-status")
 
@@ -166,7 +167,7 @@ def normalize_error_line(line: str) -> str:
     return " ".join(line.split())[:160]
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def health() -> dict:
     """Kesehatan infra lengkap: gateway, tunnel, portal, unit gagal, port, disk, RAM, load, trivy DB."""
     gateway_active = _run(["systemctl", "--user", "is-active", "hermes-gateway"], user=True)
@@ -256,13 +257,17 @@ def _tail_lines(path: str | Path, keep: int) -> tuple[list[str], int]:
     return lines, total
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def recent_errors(n: int = 60) -> dict:
     """Tail errors.log lalu kelompokkan menjadi pola error unik + frekuensi (debugging zero-touch)."""
     try:
         lines, total_bytes = _tail_lines(ERRORS_LOG, 5000)
     except FileNotFoundError:
         return {"error": "errors.log not found", "patterns": [], "tail": []}
+    except OSError as exc:  # PermissionError dll — tool wajib tetap menjawab
+        return {"error": f"errors.log tidak terbaca: {exc}", "patterns": [],
+                "window_lines": 0, "file_bytes": 0, "buffered_lines": 0,
+                "unique_patterns": 0, "top_patterns": [], "tail": []}
 
     window = lines[-max(1, min(n, 500)):]
     counter: Counter[str] = Counter(normalize_error_line(ln) for ln in window)
@@ -280,7 +285,7 @@ def recent_errors(n: int = 60) -> dict:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def services(pattern: str = "hermes-*") -> dict:
     """Detail unit systemd --user (default prefix hermes-*): state/load/sub per unit,
     daftar unit failed, proses tunnel, dan probe portal — untuk diagnosis terarah."""
@@ -371,7 +376,7 @@ def services(pattern: str = "hermes-*") -> dict:
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def ports(port: int | None = None) -> dict:
     """Daftar TCP listener (ss -ltnpH) — tanpa argumen: semua; dengan port: cek
     apakah port itu listening + proses pemegangnya."""
@@ -396,10 +401,25 @@ def ports(port: int | None = None) -> dict:
             "entries": entries}
 
 
-@mcp.tool()
+# journalctl -p tidak valid -> exit 0 + "Unknown log level" (empiris 1 Okt 2026):
+# pesan itu pernah bocor keluar sebagai LOG PALSU. Validasi allow-list dulu.
+JOURNAL_LEVELS = frozenset({
+    "", "emerg", "alert", "crit", "err", "error", "warning", "warn", "notice",
+    "info", "debug", "0", "1", "2", "3", "4", "5", "6", "7",
+})
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def gateway_logs(n: int = 100, level: str = "", contains: str = "") -> dict:
     """Tail journal unit hermes-gateway — filter severity (level: emerg..debug) dan/
-    atau keyword substring; semua token panjang di-redact sebelum keluar server."""
+    atau keyword substring; semua token panjang di-redact sebelum keluar server.
+    level: emerg|alert|crit|err|warning|notice|info|debug (atau angka 0-7)."""
+    level = str(level).lower().strip()
+    if level not in JOURNAL_LEVELS:
+        raise ValueError(
+            f"level '{level}' tidak valid — pilih emerg|alert|crit|err|warning|"
+            "notice|info|debug (atau angka 0-7)"
+        )
     cmd = ["journalctl", "--user", "-u", "hermes-gateway",
            "-n", str(max(1, min(n, 500))), "--no-pager", "-o", "short-iso", "-q"]
     if level:
@@ -417,7 +437,7 @@ def gateway_logs(n: int = 100, level: str = "", contains: str = "") -> dict:
             "lines": [ln.rstrip() for ln in lines[-min(len(lines), 200):]]}
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
 def config_view(section: str = "") -> dict:
     """Baca ~/.hermes/config.yaml — satu section ('model', 'mcp_servers', ...) atau
     seluruh struktur — dengan SEMUA credential/secret di-redact di sisi server."""

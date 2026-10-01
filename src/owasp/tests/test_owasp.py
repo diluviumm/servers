@@ -206,6 +206,29 @@ def test_trivy_image_json_severity_counts(monkeypatch):
     assert out["sample"]
 
 
+def test_all_tools_have_annotations():
+    """MCP best practice: annotations wajib; scanner = readOnly + openWorld."""
+    import asyncio
+    tools = asyncio.run(server.mcp.list_tools())
+    assert tools and all(t.annotations is not None for t in tools)
+    by_name = {t.name: t for t in tools}
+    assert by_name["nuclei_scan"].annotations.readOnlyHint is True
+    assert by_name["nuclei_scan"].annotations.openWorldHint is True
+    assert by_name["gitleaks_scan"].annotations.readOnlyHint is True
+
+
+def test_trivy_image_sarif_timeout_surfaces_error(monkeypatch):
+    """BUG #3: sarif branch returned no 'error' key on timeout (-1) — inconsistent
+    with the json branch which reports it."""
+    monkeypatch.setattr(server, "_bin", lambda n: n)
+    monkeypatch.setattr(server, "_ensure_trivy_db", lambda: {"age_h": 1.0})
+    monkeypatch.setattr(
+        server, "_run",
+        lambda cmd, timeout: {"code": -1, "out": "", "err": "timeout after 600s"})
+    out = server.trivy_image("alpine:3.19", format="sarif")
+    assert out["error"] == "timeout after 600s" and out["exit"] == -1
+
+
 def test_trivy_fs_rejects_bad_format(tmp_path):
     with pytest.raises(ValueError):
         server.trivy_fs(str(tmp_path), format="xml")

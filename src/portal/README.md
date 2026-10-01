@@ -30,6 +30,14 @@ python3 server.py   # MCP over stdio
 ~/.hermes/mcp-servers/venv/bin/python /path/ke/src/portal/server.py
 ```
 
+## Tool annotations (MCP)
+
+| Annotation | Tools |
+|---|---|
+| `readOnlyHint=true` | `clipboard_read` |
+| `destructiveHint=false` | `screenshot` (menulis file baru) |
+| `destructiveHint=true`, `idempotentHint=true` | `clipboard_write` (menimpa clipboard user) |
+
 ## Catatan
 
 - Screenshot juga masuk clipboard sistem sebagai efek samping native Niri.
